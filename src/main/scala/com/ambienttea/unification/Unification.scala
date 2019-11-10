@@ -1,8 +1,12 @@
 package com.ambienttea.unification
 
 import Term._
+import cats.implicits._
+import cats.data._
+import language.postfixOps
 
 object Unification {
+  type UnificationState[T] = StateT[Option, Map[Symbol, Term], T]
 
   case class Environment(variables: Map[Symbol, Term] = Map.empty)
 
@@ -10,55 +14,48 @@ object Unification {
     def empty: Environment = Environment()
   }
 
-  def unify(env: Environment)(term1: Term, term2: Term): Option[(Environment, Term)] = {
+  def unify(term1: Term, term2: Term): StateT[Option, Map[Symbol, Term], Term] = {
     (term1, term2) match {
-      case (Atom(x), Atom(y)) if x == y => Some((env, term1))
-      case (Number(x), Number(y)) if x == y => Some((env, term1))
-      case (Variable(xn), Variable(yn)) => unifyVars(env)(xn, yn)
-      case (Variable(xn), term) => unifyVarWithTerm(env)(xn, term)
-      case (term, Variable(xn)) => unifyVarWithTerm(env)(xn, term)
-      case (Functor(f1, args1), Functor(f2, args2)) if f1 == f2 && args1.size == args2.size =>
-        println(s">>> $f1: $args1, $args2")
-        unifyFunctors(env)(f1, args1, args2)
-      case _ => None
+      case (Atom(x), Atom(y)) if x == y => StateT.pure(term1)
+      case (Number(x), Number(y)) if x == y => StateT.pure(term1)
+      case (Variable(xn), Variable(yn)) => unifyVars(xn, yn)
+      case (Variable(xn), term) => unifyVarWithTerm(xn, term)
+      case (term, Variable(xn)) => unifyVarWithTerm(xn, term)
+      case (Functor(f1, args1), Functor(f2, args2))
+        if f1 == f2 && args1.size == args2.size => unifyFunctors(f1, args1, args2)
+      case _ => StateT.liftF(None)
     }
   }
 
-  private def unifyVarWithTerm(env: Environment)(xn: Symbol, term: Term): Option[(Environment, Term)] =
-    env.variables.get(xn) match {
-      case None =>
-        val newVars = env.variables + (xn -> term)
-        Some(env.copy(variables = newVars) -> term)
-      case Some(vterm) => unify(env)(term, vterm)
-    }
-
-  private def unifyVars(env: Environment)(xn: Symbol, yn: Symbol): Option[(Environment, Term)] = {
-    val v = env.variables
-    (v.get(xn), v.get(yn)) match {
-      case (Some(x), Some(y)) => unify(env)(x, y)
-      case (x, y) =>
-        for {
-          xy <- x orElse y
-          newVars = env.variables + (xn -> xy) + (yn -> xy)
-          newEnv = env.copy(variables = newVars)
-        } yield (newEnv, xy)
-    }
+  private def unifyVarWithTerm(xn: Symbol, term: Term): UnificationState[Term] = {
+    for {
+      env <- StateT.get[Option, Map[Symbol, Term]]
+      result <- env.get(xn) match {
+        case Some(vterm) => unify(term, vterm)
+        case None => StateT.set[Option, Map[Symbol, Term]](env + (xn -> term)) *> StateT.pure(term)
+      }
+    } yield result
   }
 
-  private def unifyFunctors(env: Environment)(
-    symbol: Symbol, args1: List[Term], args2: List[Term]
-  ): Option[(Environment, Term)] = {
-    val (newEnv: Option[Environment], args: List[Nothing]) =
-      (args1, args2).zipped
-        .foldLeft(Option(env) -> List[Term]()) {
-          case ((env, stack), (t1, t2)) =>
-            env.flatMap(unify(_)(t1, t2)) match {
-              case None => (None, Nil)
-              case Some((env, term)) => (Some(env), term :: stack)
-            }
-        }
+  private def unifyVars(xn: Symbol, yn: Symbol): UnificationState[Term] =
+    for {
+      env <- StateT.get[Option, Map[Symbol, Term]]
+      result <- (env.get(xn), env.get(yn)) match {
+        case (Some(x), Some(y)) => unify(x, y)
+        case (x, y) =>
+          for {
+            xy <- StateT.liftF[Option, Map[Symbol, Term], Term](x orElse y)
+            _ <- StateT.modify[Option, Map[Symbol, Term]](_ + (xn -> xy) + (yn -> xy))
+          } yield xy
+      }
+    } yield result
 
-    newEnv.map(_ -> symbol(args: _*))
+  private def unifyFunctors(
+                             symbol: Symbol, args1: List[Term], args2: List[Term]
+                           ): UnificationState[Term] = {
+    for {
+      res <- (args1, args2).zipped.toList.traverse(unify _ tupled)
+    } yield symbol(res: _*)
   }
 
 }
