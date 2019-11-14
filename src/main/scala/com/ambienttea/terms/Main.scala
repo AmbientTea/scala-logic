@@ -18,70 +18,72 @@ object Main extends App {
     def ?? : Variable = Variable(Symbol(s"_${symbol}${Random.nextString(2)}"))
   }
 
-  type BacktrackingComputation[T] = StateT[LazyList, Map[Symbol, Term], T]
+  type Env = Map[Symbol, Term]
 
-  def computation1[F[_] : Monad](implicit S: MonadState[F, Map[Symbol, Term]],
-                                 MO: MonoidK[F]): F[Term] =
-    for {
-      _ <- 'term =? 'X.?
-      _ <- 'f('X ?, 'term2) =? 'f('Y ?, 'Z ?)
-      xy <- 'X.? =? 'Y.?
-    } yield xy
+  class predicates[F[_]](implicit S: MonadState[F, Env], MO: MonoidK[F], M: Monad[F]) {
+    def length(list: Term, len: Term): F[Term] = {
+      lazy val headCase = (list =? 'nil) *> (len =? 0)
+      lazy val Tail = `_` // hacking around the lack of scope
+      lazy val TailLength = `_`
+      lazy val tailCase = for {
+        _ <- list =? '::(`_`, Tail)
+        len <- length(Tail, TailLength)
+      } yield ('s(len): Term)
 
-  println(s"no backtracking: x = y = ${computation1[BacktrackingComputation].runA(Map.empty).toList}")
+      headCase <+> tailCase
+    }
 
-  def computation2[F[_] : Monad](implicit S: MonadState[F, Map[Symbol, Term]],
-                                 MO: MonoidK[F]): F[Term] =
-    for {
-      _ <- ('term =? 'X.?) <+> ('term2 =? 'X.?)
-      _ <- 'f('X ?, 'term2) =? 'f('Y ?, 'Z ?)
-      xy <- 'X.? =? 'Y.?
-    } yield xy
+    def member(list: Term, mem: Term): F[Term] = {
+      lazy val Tail = 'Tail ??
+      lazy val headCase = (list =? '::(mem, `_`)) *> (mem =? mem)
+      lazy val tailCase = for {
+        _ <- list =? '::(`_`, Tail)
+        m <- member(Tail, mem)
+      } yield m
 
-  println(s"backtracking: x = y = ${computation2[BacktrackingComputation].runA(Map.empty).toList}")
+      headCase <+> tailCase
+    }
 
-  def length[F[_]](list: Term, len: Term)(implicit S: MonadState[F, Map[Symbol, Term]],
-                                          M: Monad[F],
-                                          MO: MonoidK[F]): F[Term] = {
-    lazy val headCase = (list =? 'nil) *> (len =? 0)
-    lazy val Tail = `_` // hacking around the lack of scope
-    lazy val TailLength = `_`
-    lazy val tailCase = for {
-      _ <- list =? '::(`_`, Tail)
-      len <- length(Tail, TailLength)
-    } yield ('s(len): Term)
-
-    headCase <+> tailCase
   }
 
+  type BacktrackingComputation[T] = StateT[LazyList, Map[Symbol, Term], T]
+
+  object predicates extends predicates[BacktrackingComputation]
+
+  import predicates._
+
+  /*
+
+      def computation1[F[_] : Monad](implicit S: MonadState[F, Map[Symbol, Term]],
+                                     MO: MonoidK[F]): F[Term] =
+        for {
+          _ <- 'term =? 'X.?
+          _ <- 'f('X ?, 'term2) =? 'f('Y ?, 'Z ?)
+          xy <- 'X.? =? 'Y.?
+        } yield xy
+
+      println(s"no backtracking: x = y = ${computation1[BacktrackingComputation].runA(Map.empty).toList}")
+
+      def computation2[F[_] : Monad](implicit S: MonadState[F, Map[Symbol, Term]],
+                                     MO: MonoidK[F]): F[Term] =
+        for {
+          _ <- ('term =? 'X.?) <+> ('term2 =? 'X.?)
+          _ <- 'f('X ?, 'term2) =? 'f('Y ?, 'Z ?)
+          xy <- 'X.? =? 'Y.?
+        } yield xy
+
+      println(s"backtracking: x = y = ${computation2[BacktrackingComputation].runA(Map.empty).toList}")
+    */
 
   val termList = '::(0, '::(1, '::(2, 'nil)))
 
-  def computation3[F[_] : Monad](implicit S: MonadState[F, Map[Symbol, Term]],
-                                 MO: MonoidK[F]): F[Term] = {
-    length(termList, `_`)
-  }
+  def computation3 = length(termList, `_`)
 
-  println(s"list length = ${computation3[BacktrackingComputation].runA(Map.empty).toList}")
+  println(s"list length = ${computation3.runA(Map.empty).toList}")
 
-  def member[F[_]](list: Term, mem: Term)(implicit S: MonadState[F, Map[Symbol, Term]],
-                                          M: Monad[F],
-                                          MO: MonoidK[F]): F[Term] = {
-    lazy val Tail = 'Tail ??
-    lazy val headCase = list =? '::(mem, `_`)
-    lazy val tailCase = for {
-      _ <- list =? '::(`_`, Tail)
-      m <- member(Tail, mem)
-    } yield m
+  def computation4: BacktrackingComputation[Term] =
+    member(termList, 'Member ?) // >> ('Member.? =? 'Member.?): BacktrackingComputation[Term]
 
-     headCase <+> tailCase
-  }
-
-  def computation4[F[_] : Monad](implicit S: MonadState[F, Map[Symbol, Term]],
-                                 MO: MonoidK[F]): F[Term] = {
-    member(termList, 'Member ?) *> ('Member.? =? 'Member.?)
-  }
-
-  val  members = computation4[BacktrackingComputation].runA(Map.empty).toList
+  val members = computation4.runA(Map.empty).toList
   println(s"list members = $members")
 }
