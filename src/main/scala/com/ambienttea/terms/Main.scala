@@ -27,6 +27,7 @@ object Main extends App {
       lazy val TailLength = `_`
       lazy val tailCase = for {
         _ <- list =? '::(`_`, Tail)
+        _ <- len =? 's(TailLength)
         len <- length(Tail, TailLength)
       } yield ('s(len): Term)
 
@@ -50,7 +51,7 @@ object Main extends App {
 
   object predicates extends predicates[BacktrackingComputation]
 
-  import predicates._
+  import predicates.{length, member}
 
   /*
 
@@ -85,4 +86,12 @@ object Main extends App {
 
   val members = computation4.runA(Map.empty).toList
   println(s"list members = $members")
+
+  def computation5 =
+    for {
+      _ <- length('List ?, 's('s('s(0))))
+      list <- Reification.reify[BacktrackingComputation]('List ?)
+    } yield list
+
+  println(s"3 element list = ${computation5.runA(Map.empty).toList}")
 }
