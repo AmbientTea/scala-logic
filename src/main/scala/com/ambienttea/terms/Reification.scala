@@ -1,5 +1,7 @@
 package com.ambienttea.terms
 
+import cats.mtl.MonadState
+
 object Reification {
   def reify(term: Term, env: Map[Symbol, Term]): Term =
     reify(env)(term)
@@ -12,4 +14,9 @@ object Reification {
         Functor(op, arguments.map(reify(env)))
       case other => other
     }
+
+  def reify[F[_]](term: Term)(
+    implicit S: MonadState[F, Map[Symbol, Term]]
+  ): F[Term] =
+    S.inspect(reify(term, _))
 }

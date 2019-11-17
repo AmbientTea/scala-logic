@@ -35,7 +35,7 @@ object Main extends App {
 
     def member(list: Term, mem: Term): F[Term] = {
       lazy val Tail = 'Tail ??
-      lazy val headCase = (list =? '::(mem, `_`)) *> (mem =? mem)
+      lazy val headCase = (list =? '::(mem, `_`)) *> Reification.reify(mem)
       lazy val tailCase = for {
         _ <- list =? '::(`_`, Tail)
         m <- member(Tail, mem)
