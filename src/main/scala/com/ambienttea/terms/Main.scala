@@ -81,8 +81,7 @@ object Main extends App {
 
   println(s"list length = ${computation3.runA(Map.empty).toList}")
 
-  def computation4: BacktrackingComputation[Term] =
-    member(termList, 'Member ?) // >> ('Member.? =? 'Member.?): BacktrackingComputation[Term]
+  def computation4 = member(termList, 'Member ?)
 
   val members = computation4.runA(Map.empty).toList
   println(s"list members = $members")
