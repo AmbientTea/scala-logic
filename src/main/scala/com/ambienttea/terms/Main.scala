@@ -94,4 +94,14 @@ object Main extends App {
     } yield list
 
   println(s"3 element list = ${computation5.runA(Map.empty).toList}")
+
+  def computation6 =
+    for {
+      _ <- member('List?, 1)
+      _ <- member('List?, 2)
+      _ <- member('List?, 3)
+      list <- Reification.reify[BacktrackingComputation]('List?)
+    } yield list
+
+  println(s"list of elements: ${computation6.runA(Map.empty) take 4 mkString "\n"}")
 }
