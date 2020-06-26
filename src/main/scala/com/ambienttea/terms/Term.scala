@@ -27,6 +27,7 @@ object Term {
 
   implicit class SymbolOps(symbol: Symbol) {
     def ? : Variable = Variable(symbol)
+    def ?? : Variable = Variable(Symbol(s"_${symbol}${Random.nextString(2)}"))
 
     def apply(args: Term*): Functor = Functor(symbol, args.toList)
 
